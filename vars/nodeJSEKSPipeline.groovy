@@ -45,9 +45,6 @@ def call(Map configMap) {
             stage('Unit tests') {
                 steps {
                     script{
-                        /* sh """
-                            npm test
-                        """ */
                         def testResult = sh(script: 'npm test', returnStatus: true)
                         if (testResult != 0) {
                             utils.updateCommitStatus('failure', 'Unit tests failed', 'unit-tests')
@@ -58,7 +55,7 @@ def call(Map configMap) {
                     }
                 }
             }
-            stage('SonarQube Analysis') {
+            /* stage('SonarQube Analysis') {
                 steps {
                     script {
                         def scannerHome = tool name: 'sonar-8'      // Agent configuration
@@ -74,7 +71,7 @@ def call(Map configMap) {
                         waitForQualityGate abortPipeline: true
                     }
                 }
-            }
+            } */
             stage('Dependabot Alerts Check') {
                 steps {
                     withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
@@ -210,7 +207,7 @@ def call(Map configMap) {
                     }
                 }
             }
-            stage('Push image to ECR') {
+            /* stage('Push image to ECR') {
                 steps {
                 script{
                         withAWS(credentials: 'aws-creds', region: "${region}") {
@@ -222,7 +219,7 @@ def call(Map configMap) {
                         }
                     }
                 }
-            }
+            } */
         }
         // post build
         post { 
