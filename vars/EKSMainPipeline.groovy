@@ -171,7 +171,7 @@ def call(Map configMap) {
                 }
             }
         }
-
+        // post build
         post {
             success {
                 echo "${env.DEPLOY_TO} deploy succeeded for ${component}"

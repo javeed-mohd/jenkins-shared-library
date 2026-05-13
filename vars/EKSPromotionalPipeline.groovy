@@ -34,6 +34,7 @@ def call(Map configMap){
                 }
             }
         }
+        // post build
         post {
             success {
                 echo "Pipeline succeeded on branch: ${env.BRANCH_NAME}"
