@@ -1,6 +1,10 @@
 def call(Map configMap) {
     pipeline {
-        agent { node { label 'roboshop' } }
+        agent { 
+            node { 
+                label 'roboshop' 
+            }
+        }
         parameters {
             choice(name: 'deploy_to', choices: ['dev', 'uat', 'prod'], description: 'Target environment')
             string(name: 'VERSION',   defaultValue: '', description: 'Short commit SHA — set by Jira webhook for UAT/PROD')
@@ -31,7 +35,6 @@ def call(Map configMap) {
             region       = "us-east-1"
             CLUSTER      = "roboshop-dev"
         }
-
         stages {
             // ── INIT — pick webhook env vars (Generic Trigger) over manual params ─
             stage('Init') {
@@ -103,6 +106,81 @@ def call(Map configMap) {
                         }
                     }
                 }
+            }
+
+            // JIRA Ticket Creation
+            stage('Create Jira Ticket') {
+                when { expression { env.DEPLOY_TO == 'dev' } }
+                steps {
+                    script {
+                        utils.createJiraTicket(jira_project, component, appVersion, shortCommit)
+                    }
+                }
+            }
+
+            // ── UAT ────────────────────────────────────────────────────────────
+            stage('Deploy to UAT') {
+                when { expression { env.DEPLOY_TO == 'uat' } }
+                steps {
+                    script {
+                        sh "git checkout ${env.TARGET_VERSION}"
+                        withAWS(region: "${region}", credentials: 'aws-creds') {
+                            sh """
+                                aws eks update-kubeconfig --region ${region} --name ${CLUSTER}
+                                cd helm
+                                sed -i "s/IMAGE_VERSION/${env.TARGET_VERSION}/g" values.yaml
+                                helm upgrade --install ${component} -f values-uat.yaml -n ${project}-uat --atomic --wait --timeout=5m .
+                            """
+                        }
+                        echo "UAT deploy succeeded — Jira transition handled by Jira Automation"
+                    }
+                }
+            }
+
+            // ── PROD ───────────────────────────────────────────────────────────
+            stage('Validate Change Request') {
+                when { expression { env.DEPLOY_TO == 'prod' } }
+                steps {
+                    script {
+                        utils.validateChangeRequest(env.CR_NUMBER)
+                    }
+                }
+            }
+
+            stage('Deploy to PROD') {
+                when { expression { env.DEPLOY_TO == 'prod' } }
+                steps {
+                    script {
+                        sh "git checkout ${env.TARGET_VERSION}"
+                        withAWS(region: "${region}", credentials: 'aws-creds') {
+                            sh """
+                                aws eks update-kubeconfig --region ${region} --name ${CLUSTER}
+                                cd helm
+                                sed -i "s/IMAGE_VERSION/${env.TARGET_VERSION}/g" values.yaml
+                                helm upgrade --install ${component} -f values-prod.yaml -n ${project}-prod --atomic --wait --timeout=5m .
+                            """
+                        }
+                        utils.transitionJiraTicket(env.JIRA_ISSUE, 'Done')
+                        withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
+                            sh '''
+                                APP_VERSION=$(jq -r .version package.json)
+                                REPO_PATH=$(git remote get-url origin | sed 's/.*github\\.com[\\/:]//;s/\\.git$//')
+                                git remote set-url origin https://$GITHUB_TOKEN@github.com/$REPO_PATH
+                                git tag $APP_VERSION
+                                git push origin $APP_VERSION
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+        // post build
+        post {
+            success {
+                echo "${env.DEPLOY_TO} deploy succeeded for ${component}"
+            }
+            failure {
+                echo "${env.DEPLOY_TO} deploy failed for ${component}"
             }
         }
     }
