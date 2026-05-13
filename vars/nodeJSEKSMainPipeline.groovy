@@ -57,7 +57,19 @@ def call(Map configMap) {
                         def packageJson = readJSON file: 'package.json'
                         appVersion  = packageJson.version
                         shortCommit = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+
+                        //Tag Name
+                        def tagName = "${appVersion}"
+
+                        // Check if Tag already exists in remote
+                        def tagExists = sh(script: "git ls-remote --tags origin refs/tags/${tagName}", returnStdout: true).trim()
+
+                        if (tagExists) {
+                            error "Release tag '${tagName}' already exists in remote repository."
+                        }
+
                         echo "appVersion: ${appVersion}   shortCommit: ${shortCommit}"
+                        echo "Tag '${tagName}' does not exist. Proceeding with the build."
                     }
                 }
             }
